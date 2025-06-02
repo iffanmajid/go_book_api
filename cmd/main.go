@@ -1,26 +1,46 @@
 package main
 
 import (
+	"log"
+	"os"
+
 	"github.com/gin-gonic/gin"
-	"go_book_api/api"
+	"github.com/joho/godotenv"
+	gormpostgres "gorm.io/driver/postgres"
+	"gorm.io/gorm"
+
+	"go_book_api/delivery/http/handler"
+	postgres "go_book_api/repository/postgres"
+	"go_book_api/usecase/auth"
+	"go_book_api/usecase/book"
 )
 
 func main() {
-	api.InitDB()
-	r := gin.Default()
-
-	// Public routes
-	r.POST("/token", api.GenerateJWT)
-
-	// protected routes
-	protected := r.Group("/", api.JWTAuthMiddleware())
-	{
-		protected.POST("/book", api.CreateBook)
-		protected.GET("/books", api.GetBooks)
-		protected.GET("/books/:id", api.GetBook)
-		protected.PUT("/books/:id", api.UpdateBook)
-		protected.DELETE("/books/:id", api.DeleteBook)
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
 	}
 
-	r.Run(":8080")
+	dsn := os.Getenv("DB_URL")
+	db, err := gorm.Open(gormpostgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+
+	// Initialize repository
+	bookRepo := postgres.NewPostgresBookRepository(db)
+
+	// Initialize usecases
+	bookUseCase := book.NewBookUseCase(bookRepo)
+	authUseCase := auth.NewAuthUseCase()
+
+	// Initialize Gin router
+	router := gin.Default()
+
+	// Initialize handlers
+	handler.NewAuthHandler(router, authUseCase)
+	handler.NewBookHandler(router, bookUseCase, authUseCase)
+
+	// Start server
+	router.Run(":8080")
 }
